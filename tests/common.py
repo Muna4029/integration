@@ -13,7 +13,13 @@ from unittest.mock import AsyncMock, Mock, patch
 from aiohttp import ClientSession, ClientWebSocketResponse
 from aiohttp.typedefs import StrOrURL
 from awesomeversion import AwesomeVersion
-from homeassistant import auth, bootstrap, config_entries, core as ha, config as ha_config
+from homeassistant import (
+    auth,
+    bootstrap,
+    config_entries,
+    core as ha,
+    config as ha_config,
+)
 from homeassistant.auth import auth_store, models as auth_models
 from homeassistant.const import (
     EVENT_HOMEASSISTANT_CLOSE,
@@ -49,13 +55,13 @@ TOKEN = "XXXXXXXXXXXXXXXXXXXXXXXXXXXXXXX"
 INSTANCES = []
 REQUEST_CONTEXT: ContextVar[pytest.FixtureRequest] = ContextVar("request_context", default=None)
 
-IGNORED_BASE_FILES = set([
-        "/config/automations.yaml",
-        "/config/configuration.yaml",
-        "/config/scenes.yaml",
-        "/config/scripts.yaml",
-        "/config/secrets.yaml",
-    ])
+IGNORED_BASE_FILES = {
+    "/config/automations.yaml",
+    "/config/configuration.yaml",
+    "/config/scenes.yaml",
+    "/config/scripts.yaml",
+    "/config/secrets.yaml",
+}
 
 
 def safe_json_dumps(data: dict | list) -> str:
@@ -67,7 +73,9 @@ def safe_json_dumps(data: dict | list) -> str:
     )
 
 
-def recursive_remove_key(data: dict[str, Any], to_remove: Iterable[str]) -> dict[str, Any]:
+def recursive_remove_key(
+    data: dict[str, Any], to_remove: Iterable[str]
+) -> dict[str, Any]:
     if not isinstance(data, (Mapping, list)):
         return data
 
@@ -215,7 +223,9 @@ async def async_test_home_assistant(loop, tmpdir):
     hass.data[bootstrap.DATA_REGISTRIES_LOADED] = None
 
     hass.config_entries = config_entries.ConfigEntries(hass, {})
-    hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, hass.config_entries._async_shutdown)
+    hass.bus.async_listen_once(
+        EVENT_HOMEASSISTANT_STOP, hass.config_entries._async_shutdown
+    )
 
     hass.state = ha.CoreState.running
     await async_setup_component(hass, "homeassistant", {})
@@ -275,7 +285,9 @@ def mock_storage(data=None):
         """Mock version of write data."""
         _LOGGER.info("Writing data to %s: %s", store.key, data_to_write)
         # To ensure that the data can be serialized
-        data[store.key] = json_func.loads(json_func.dumps(data_to_write, cls=store._encoder))
+        data[store.key] = json_func.loads(
+            json_func.dumps(data_to_write, cls=store._encoder)
+        )
 
     async def mock_remove(store):
         """Remove data."""
@@ -330,9 +342,13 @@ class MockConfigEntry(config_entries.ConfigEntry):
         hass.config_entries._entries[self.entry_id] = self
 
         if AwesomeVersion(HAVERSION) >= "2023.10.0":
-            hass.config_entries._domain_index.setdefault(self.domain, []).append(self)
+            hass.config_entries._domain_index.setdefault(self.domain, []).append(
+                self
+            )
         else:
-            hass.config_entries._domain_index.setdefault(self.domain, []).append(self.entry_id)
+            hass.config_entries._domain_index.setdefault(self.domain, []).append(
+                self.entry_id
+            )
 
 
 class WSClient:
@@ -359,7 +375,9 @@ class WSClient:
 
             clientsession.detach()
 
-        self.hass.bus.async_listen_once(EVENT_HOMEASSISTANT_STOP, _async_close_websession)
+        self.hass.bus.async_listen_once(
+            EVENT_HOMEASSISTANT_STOP, _async_close_websession
+        )
 
         self.client = await clientsession.ws_connect(
             "ws://localhost:8123/api/websocket", timeout=1, autoclose=True
@@ -379,7 +397,9 @@ class WSClient:
     async def receive_json(self) -> dict[str, Any]:
         return await self.client.receive_json()
 
-    async def send_and_receive_json(self, type: str, payload: dict[str, Any]) -> dict[str, Any]:
+    async def send_and_receive_json(
+    self, type: str, payload: dict[str, Any]
+) -> dict[str, Any]:
         await self.send_json(type=type, payload=payload)
         return await self.client.receive_json()
 
@@ -562,7 +582,9 @@ def create_config_entry(
         )
 
 
-async def setup_integration(hass: ha.HomeAssistant, config_entry: MockConfigEntry) -> None:
+async def setup_integration(
+    hass: ha.HomeAssistant, config_entry: MockConfigEntry
+) -> None:
     mock_session = await client_session_proxy(hass)
     with patch(
         "homeassistant.helpers.aiohttp_client.async_get_clientsession", return_value=mock_session
