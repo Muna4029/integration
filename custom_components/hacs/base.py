@@ -1,4 +1,5 @@
 """Base HACS class."""
+
 from __future__ import annotations
 
 import asyncio
@@ -10,7 +11,7 @@ import math
 import os
 import pathlib
 import shutil
-from typing import TYPE_CHECKING, Any, Awaitable, Callable
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
 
 from aiogithubapi import (
     AIOGitHubAPIException,
@@ -37,7 +38,9 @@ from custom_components.hacs.repositories.base import (
     REPOSITORY_KEYS_TO_EXPORT,
 )
 
-from .const import DOMAIN, TV, URL_BASE
+from .const import DOMAIN, URL_BASE
+
+TV = TypeVar("TV")
 from .data_client import HacsDataClient
 from .enums import (
     ConfigurationType,
@@ -78,7 +81,7 @@ class RemovedRepository:
     repository: str | None = None
     reason: str | None = None
     link: str | None = None
-    removal_type: str = None  # archived, not_compliant, critical, dev, broken
+    removal_type: str | None = None  # archived, not_compliant, critical, dev, broken
     acknowledged: bool = False
 
     def update_data(self, data: dict):
@@ -130,10 +133,10 @@ class HacsConfiguration:
     sidepanel_title: str = "HACS"
     theme_path: str = "themes/"
     theme: bool = False
-    token: str = None
+    token: str | None = None
 
-    def to_json(self) -> str:
-        """Return a json string."""
+    def to_json(self) -> dict[str, Any]:
+        """Return a json dictionary."""
         return asdict(self)
 
     def update_from_dict(self, data: dict) -> None:
@@ -200,7 +203,9 @@ class HacsRepositories:
     _repositories: set[HacsRepository] = field(default_factory=set)
     _repositories_by_full_name: dict[str, HacsRepository] = field(default_factory=dict)
     _repositories_by_id: dict[str, HacsRepository] = field(default_factory=dict)
-    _removed_repositories_by_full_name: dict[str, RemovedRepository] = field(default_factory=dict)
+    _removed_repositories_by_full_name: dict[str, RemovedRepository] = field(
+        default_factory=dict
+    )
 
     @property
     def list_all(self) -> list[HacsRepository]:
@@ -318,9 +323,10 @@ class HacsRepositories:
         repository_full_name: str | None = None,
     ) -> bool:
         """Check if a repository is registered."""
+        repo = None
         if repository_id is not None:
             repo = self.get_by_id(repository_id)
-        if repository_full_name is not None:
+        elif repository_full_name is not None:
             repo = self.get_by_full_name(repository_full_name)
         if repo is None:
             return False
@@ -332,7 +338,9 @@ class HacsRepositories:
             return None
         return self._repositories_by_id.get(str(repository_id))
 
-    def get_by_full_name(self, repository_full_name: str | None) -> HacsRepository | None:
+    def get_by_full_name(
+        self, repository_full_name: str | None
+    ) -> HacsRepository | None:
         """Get repository by full name."""
         if not repository_full_name:
             return None
@@ -407,7 +415,9 @@ class HacsBase:
         ):
             self.configuration.config_entry.state = ConfigEntryState.SETUP_ERROR
             self.configuration.config_entry.reason = "Authentication failed"
-            self.hass.add_job(self.configuration.config_entry.async_start_reauth, self.hass)
+            self.hass.add_job(
+                self.configuration.config_entry.async_start_reauth, self.hass
+            )
 
     def enable_hacs(self) -> None:
         """Enable HACS."""
@@ -425,7 +435,7 @@ class HacsBase:
         """Disable HACS category."""
         if category in self.common.categories:
             self.log.info("Disabling category: %s", category)
-            self.common.categories.pop(category)
+            self.common.categories.discard(category)
 
     async def async_save_file(self, file_path: str, content: Any) -> bool:
         """Save a file."""
@@ -471,7 +481,9 @@ class HacsBase:
             response = await self.async_github_api_method(self.githubapi.rate_limit)
             if ((limit := response.data.resources.core.remaining or 0) - 1000) >= 10:
                 return math.floor((limit - 1000) / 10)
-            reset = dt.as_local(dt.utc_from_timestamp(response.data.resources.core.reset))
+            reset = dt.as_local(
+                dt.utc_from_timestamp(response.data.resources.core.reset)
+            )
             self.log.info(
                 "GitHub API ratelimited - %s remaining (%s)",
                 response.data.resources.core.remaining,
@@ -547,8 +559,9 @@ class HacsBase:
         if repository_full_name == "home-assistant/core":
             raise HomeAssistantCoreRepositoryException()
 
-        if repository_full_name == "home-assistant/addons" or repository_full_name.startswith(
-            "hassio-addons/"
+        if (
+            repository_full_name == "home-assistant/addons"
+            or repository_full_name.startswith("hassio-addons/")
         ):
             raise AddonRepositoryException()
 
@@ -560,17 +573,23 @@ class HacsBase:
             )
             return
 
-        if (renamed := self.common.renamed_repositories.get(repository_full_name)) is not None:
+        if (
+            renamed := self.common.renamed_repositories.get(repository_full_name)
+        ) is not None:
             repository_full_name = renamed
 
-        repository: HacsRepository = RERPOSITORY_CLASSES[category](self, repository_full_name)
+        repository: HacsRepository = RERPOSITORY_CLASSES[category](
+            self, repository_full_name
+        )
         if check:
             try:
                 await repository.async_registration(ref)
                 if repository.validate.errors:
                     self.common.skip.add(repository.data.full_name)
                     if not self.status.startup:
-                        self.log.error("Validation for %s failed.", repository_full_name)
+                        self.log.error(
+                            "Validation for %s failed.", repository_full_name
+                        )
                     if self.system.action:
                         raise HacsException(
                             f"::error:: Validation for {repository_full_name} failed."
@@ -579,8 +598,13 @@ class HacsBase:
                 if self.system.action:
                     repository.logger.info("%s Validation completed", repository.string)
                 else:
-                    repository.logger.info("%s Registration completed", repository.string)
-            except (HacsRepositoryExistException, HacsRepositoryArchivedException) as exception:
+                    repository.logger.info(
+                        "%s Registration completed", repository.string
+                    )
+            except (
+                HacsRepositoryExistException,
+                HacsRepositoryArchivedException,
+            ) as exception:
                 if self.system.generator:
                     repository.logger.error(
                         "%s Registration Failed - %s", repository.string, exception
@@ -599,7 +623,9 @@ class HacsBase:
             repository.data.id = repository_id
 
         else:
-            if self.hass is not None and ((check and repository.data.new) or self.status.new):
+            if self.hass is not None and (
+                (check and repository.data.new) or self.status.new
+            ):
                 self.async_dispatch(
                     HacsDispatchEvent.REPOSITORY,
                     {
@@ -678,7 +704,9 @@ class HacsBase:
             EVENT_HOMEASSISTANT_FINAL_WRITE, self.data.async_force_write
         )
 
-        self.log.debug("There are %s scheduled recurring tasks", len(self.recuring_tasks))
+        self.log.debug(
+            "There are %s scheduled recurring tasks", len(self.recuring_tasks)
+        )
 
         self.status.startup = False
         self.async_dispatch(HacsDispatchEvent.STATUS, {})
@@ -755,7 +783,10 @@ class HacsBase:
 
     async def async_recreate_entities(self) -> None:
         """Recreate entities."""
-        if self.configuration == ConfigurationType.YAML or not self.configuration.experimental:
+        if (
+            self.configuration.config_type == ConfigurationType.YAML
+            or not self.configuration.experimental
+        ):
             return
 
         platforms = [Platform.SENSOR, Platform.UPDATE]
@@ -769,7 +800,9 @@ class HacsBase:
         )
 
     @callback
-    def async_dispatch(self, signal: HacsDispatchEvent, data: dict | None = None) -> None:
+    def async_dispatch(
+        self, signal: HacsDispatchEvent, data: dict | None = None
+    ) -> None:
         """Dispatch a signal with data."""
         async_dispatcher_send(self.hass, signal, data)
 
@@ -817,7 +850,9 @@ class HacsBase:
                     category=HacsCategory.INTEGRATION,
                     default=True,
                 )
-                repository = self.repositories.get_by_full_name(HacsGitHubRepo.INTEGRATION)
+                repository = self.repositories.get_by_full_name(
+                    HacsGitHubRepo.INTEGRATION
+                )
             elif self.configuration.experimental and not self.status.startup:
                 self.log.error("Scheduling update of hacs/integration")
                 self.queue.add(repository.common_update())
@@ -882,7 +917,9 @@ class HacsBase:
                 if repository.data.last_fetched is None or (
                     repository.data.last_fetched.timestamp() < repo_data["last_fetched"]
                 ):
-                    repository.data.update_data({**dict(REPOSITORY_KEYS_TO_EXPORT), **repo_data})
+                    repository.data.update_data(
+                        {**dict(REPOSITORY_KEYS_TO_EXPORT), **repo_data}
+                    )
                     if (manifest := repo_data.get("manifest")) is not None:
                         repository.repository_manifest.update_data(
                             {**dict(HACS_MANIFEST_KEYS_TO_EXPORT), **manifest}
@@ -959,7 +996,10 @@ class HacsBase:
 
     async def async_check_rate_limit(self, _=None) -> None:
         """Check rate limit."""
-        if not self.system.disabled or self.system.disabled_reason != HacsDisabledReason.RATE_LIMIT:
+        if (
+            not self.system.disabled
+            or self.system.disabled_reason != HacsDisabledReason.RATE_LIMIT
+        ):
             return
 
         self.log.debug("Checking if ratelimit has lifted")
@@ -1023,7 +1063,9 @@ class HacsBase:
             removed.update_data(item)
 
         for removed in self.repositories.list_removed:
-            if (repository := self.repositories.get_by_full_name(removed.repository)) is None:
+            if (
+                repository := self.repositories.get_by_full_name(removed.repository)
+            ) is None:
                 continue
             if repository.data.full_name in self.common.ignored_repositories:
                 continue
@@ -1074,7 +1116,9 @@ class HacsBase:
         """Execute the task."""
         if self.system.disabled or not self.configuration.experimental:
             return
-        self.log.info("Starting recurring background task for downloaded custom repositories")
+        self.log.info(
+            "Starting recurring background task for downloaded custom repositories"
+        )
 
         for repository in self.repositories.list_downloaded:
             if (
@@ -1083,7 +1127,9 @@ class HacsBase:
             ):
                 self.queue.add(repository.update_repository(ignore_issues=True))
 
-        self.log.debug("Recurring background task for downloaded custom repositories done")
+        self.log.debug(
+            "Recurring background task for downloaded custom repositories done"
+        )
 
     async def async_handle_critical_repositories(self, _=None) -> None:
         """Handle critical repositories."""
@@ -1114,7 +1160,9 @@ class HacsBase:
         stored_critical = []
 
         for repository in critical:
-            removed_repo = self.repositories.removed_repository(repository["repository"])
+            removed_repo = self.repositories.removed_repository(
+                repository["repository"]
+            )
             removed_repo.removal_type = "critical"
             repo = self.repositories.get_by_full_name(repository["repository"])
 
@@ -1186,6 +1234,8 @@ class HacsBase:
 
         self.log.info("Setting up themes endpoint")
         # Register themes
-        self.hass.http.register_static_path(f"{URL_BASE}/themes", self.hass.config.path("themes"))
+        self.hass.http.register_static_path(
+            f"{URL_BASE}/themes", self.hass.config.path("themes")
+        )
 
         self.status.active_frontend_endpoint_theme = True
